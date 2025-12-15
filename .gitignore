@@ -1,0 +1,5 @@
+# File hệ thống Mac
+.DS_Store
+
+# File cấu hình của VS Code (nếu không muốn đẩy setting cá nhân lên)
+.vscode/
