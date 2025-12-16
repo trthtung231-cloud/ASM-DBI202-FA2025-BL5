@@ -1940,7 +1940,52 @@ values
 
 
 -- insert payroll
+-- 1. 12/2025
+insert into Payroll
+    (EmpID, [Month], [Year], Deduction, Allowance, TotalOTHours, TotalWorkDays, NetSalary)
+select
+    e.EmpId, 12, 2025,
+    50 as Deduction,
+    100 as Allowance,
+    ISNULL(SUM(a.OvertimeHours), 0),
+    COUNT(distinct a.WorkDate),
+    (e.BaseSalary + 100 - 50) + 
+    (ISNULL(SUM(a.OvertimeHours), 0) * ((e.BaseSalary / 176) * 2))
+from Employees e
+    left join Attendance a on e.EmpId = a.EmpId
+where MONTH(a.WorkDate) = 12 and YEAR(a.WorkDate) = 2025
+group by e.EmpId, e.BaseSalary;
 
+-- 2. 01/2026
+insert into Payroll
+    (EmpID, [Month], [Year], Deduction, Allowance, TotalOTHours, TotalWorkDays, NetSalary)
+select
+    e.EmpId, 1, 2026,
+    50, 100,
+    ISNULL(SUM(a.OvertimeHours), 0),
+    COUNT(distinct a.WorkDate),
+    (e.BaseSalary + 100 - 50) + 
+    (ISNULL(SUM(a.OvertimeHours), 0) * ((e.BaseSalary / 176) * 2))
+from Employees e
+    left join Attendance a on e.EmpId = a.EmpId
+where MONTH(a.WorkDate) = 1 and YEAR(a.WorkDate) = 2026
+group by e.EmpId, e.BaseSalary;
+
+-- 3. 02/2026 (Thưởng Tết $500)
+insert into Payroll
+    (EmpID, [Month], [Year], Deduction, Allowance, TotalOTHours, TotalWorkDays, NetSalary)
+select
+    e.EmpId, 2, 2026,
+    50,
+    500,
+    ISNULL(SUM(a.OvertimeHours), 0),
+    COUNT(distinct a.WorkDate),
+    (e.BaseSalary + 500 - 50) + 
+    (ISNULL(SUM(a.OvertimeHours), 0) * ((e.BaseSalary / 176) * 2))
+from Employees e
+    left join Attendance a on e.EmpId = a.EmpId
+where MONTH(a.WorkDate) = 2 and YEAR(a.WorkDate) = 2026
+group by e.EmpId, e.BaseSalary;
 
 ------------------------------------------------------------------------
 -- select don
