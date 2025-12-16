@@ -2004,3 +2004,139 @@ from [Location]
 -- 5. danh sach tat ca ban ghi luong 
 select *
 from Payroll
+
+------------------------------------------------------------------------
+-- select nhieu bang
+-- 1. thong tin nhan vien dang lam viec o chi nhanh Tokyo
+select
+    *
+from Employees e
+    join EmpInfo ei on e.EmpId = ei.EmpId
+where e.LocationId = (select LocationId
+from [Location]
+where LocationName = 'Tokyo Headquarter')
+
+update Employees
+set Phone = '+84966244761'
+where EmpId = 1
+
+-- 2. nhan vien moi nhan viec
+select
+    e.EmpId,
+    CONCAT(e.FName, ' ', e.LName) as Fullname,
+    ei.Gender,
+    e.[Position],
+    e.Phone,
+    e.Email
+from Employees e
+    join EmpInfo ei on e.EmpId = ei.EmpId
+where MONTH(ei.HireDate) = 12
+
+-- 3. top 5 nhan vien OT nhieu nhat 
+select top 5
+    e.EmpId,
+    CONCAT(e.FName, ' ', e.LName) as Fullname,
+    e.[Position],
+    e.DeptId,
+    l.LocationName,
+    p.TotalOTHours
+from Employees e
+    join Payroll p on e.EmpId = p.EmpID
+    join [Location] l on e.LocationId = l.LocationId
+order by TotalOTHours desc
+
+-- 4. thong ke so nhan vien / phong ban
+select
+    d.DeptId,
+    d.DeptName,
+    COUNT(e.EmpId) as NumberOfEmployees
+from Department d
+    join Employees e on d.DeptId = e.DeptId
+group by d.DeptId, d.DeptName
+
+-- 5. tong quy luong tren phong ban trong thang 1/2026
+select
+    d.DeptId,
+    d.DeptName,
+    CONCAT(ISNULL(SUM(p.NetSalary), 0), ' $') as TotalPayrollFund
+from Department d
+    join Employees e on d.DeptId = e.DeptId
+    join Payroll p on e.EmpId = p.EmpID
+where p.[Month] = 2 and p.[Year] = 2026
+group by d.DeptId, d.DeptName
+order by ISNULL(SUM(p.NetSalary), 0) desc
+
+------------------------------------------------------------------------
+-- sub-query
+-- 1. nhan vien co luong thuc nhan cao hon muc trung binh
+select
+    e.EmpId,
+    CONCAT(e.FName, ' ', e.LName) as Fullname,
+    CONCAT(p.NetSalary, ' $'),
+    CONCAT( (select AVG(NetSalary)
+    from Payroll
+    where [Month] = 12 and [Year] = 2025), ' $') as AverageNetSalary
+from Employees e
+    join Payroll p on e.EmpId = p.EmpID
+where p.[Month] = 12
+    and p.[Year] = 2025
+    and p.NetSalary > (
+        select AVG(NetSalary)
+    from Payroll
+    where p.[Month] = 12
+        and p.[Year] = 2025
+    )
+group by     e.EmpId,
+    CONCAT(e.FName, ' ', e.LName),
+    p.NetSalary
+
+-- 2. nhan vien chua tung di lam muon
+select
+    *
+from Employees e
+where e.EmpId not in (
+    select distinct
+    EmpId
+from Attendance
+where [Status] = 'Late'
+)
+
+-- 3. nhan vien co luong cung cao nhat nv
+select
+    *
+from Employees
+where BaseSalary = (
+    select MAX(BaseSalary)
+from Employees
+)
+
+-- 4. tong so gio OT cua cac phong ban
+select
+    d.DeptId,
+    d.DeptName,
+    (
+    select
+        ISNULL(SUM(p.TotalOTHours), 0)
+    from Employees e
+        join Payroll p on e.EmpId = p.EmpID
+        where e.DeptId = d.DeptId
+        and p.[Month] = 2
+        and p.[Year] = 2026
+    ) as TotalDeptOT
+from Department d
+
+-- 5. nhan vien co luong cung cao hon so voi muc trung binh trong phong ban
+select 
+    e.EmpId,
+    CONCAT(e.FName, ' ', e.LName) as Fullname,
+    e.BaseSalary,
+    e.DeptId,
+    (select AVG(BaseSalary) from Employees where DeptId = e.DeptId) as AverageBaseSalaryOnDept
+from Employees e 
+where e.BaseSalary > (
+    select
+        AVG(e1.BaseSalary)
+    from Employees e1
+    where e1.DeptId = e.DeptId
+)
+order by e.BaseSalary desc
