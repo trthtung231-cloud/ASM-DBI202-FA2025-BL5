@@ -114,6 +114,7 @@ add constraint CK_Status_Valid
 check ([Status] in ('Present', 'Absent', 'Late', 'LeaveEarly', 'Holiday', 'OnLeave'))
 go
 
+
 ---------------------------------------------
 -- insert data Location
 
@@ -1988,7 +1989,7 @@ where MONTH(a.WorkDate) = 2 and YEAR(a.WorkDate) = 2026
 group by e.EmpId, e.BaseSalary;
 
 ------------------------------------------------------------------------
--- select don
+-- SINGLE SELECT
 -- 1. danh sach tat ca nhan vien
 select *
 from Employees
@@ -2006,7 +2007,7 @@ select *
 from Payroll
 
 ------------------------------------------------------------------------
--- select nhieu bang
+-- MULTIPLE SELECT 
 -- 1. thong tin nhan vien dang lam viec o chi nhanh Tokyo
 select
     *
@@ -2067,7 +2068,7 @@ group by d.DeptId, d.DeptName
 order by ISNULL(SUM(p.NetSalary), 0) desc
 
 ------------------------------------------------------------------------
--- sub-query
+-- SUB-QUERY
 -- 1. nhan vien co luong thuc nhan cao hon muc trung binh
 select
     e.EmpId,
@@ -2119,24 +2120,604 @@ select
         ISNULL(SUM(p.TotalOTHours), 0)
     from Employees e
         join Payroll p on e.EmpId = p.EmpID
-        where e.DeptId = d.DeptId
+    where e.DeptId = d.DeptId
         and p.[Month] = 2
         and p.[Year] = 2026
     ) as TotalDeptOT
 from Department d
 
 -- 5. nhan vien co luong cung cao hon so voi muc trung binh trong phong ban
-select 
+select
     e.EmpId,
     CONCAT(e.FName, ' ', e.LName) as Fullname,
     e.BaseSalary,
     e.DeptId,
-    (select AVG(BaseSalary) from Employees where DeptId = e.DeptId) as AverageBaseSalaryOnDept
-from Employees e 
+    (select AVG(BaseSalary)
+    from Employees
+    where DeptId = e.DeptId) as AverageBaseSalaryOnDept
+from Employees e
 where e.BaseSalary > (
     select
-        AVG(e1.BaseSalary)
-    from Employees e1
-    where e1.DeptId = e.DeptId
+    AVG(e1.BaseSalary)
+from Employees e1
+where e1.DeptId = e.DeptId
 )
 order by e.BaseSalary desc
+go
+------------------------------------------------------------------------
+-- FUNCTION
+-- SCALAR RETURN FUNCTION
+-- 1. tinh tham nien lam viec
+create or alter function fn_GetWorkDurationMonths (@EmpId int)
+RETURNS int
+as
+begin
+    declare @Month int;
+    declare @HireDate date;
+
+    select @HireDate = HireDate
+    from EmpInfo
+    where EmpId = @EmpId;
+    if @HireDate is null return 0;
+
+    set @Month = DATEDIFF(MONTH, @HireDate, GETDATE());
+
+    return @Month;
+end
+go
+
+select dbo.fn_GetWorkDurationMonths(1) as WorkedMonth
+go
+
+-- 2. tinh thue
+create or alter function fn_TaxCalculate (@Salary decimal(18,2))
+returns decimal(18,2)
+as 
+begin
+    declare @Tax decimal(18,2);
+
+    if @Salary < 1750
+        set @Tax = 0;
+    else 
+        set @Tax = (@Salary - 1750) * 0.1;
+
+    return @Tax;
+end
+go
+
+select dbo.fn_TaxCalculate (
+    (select NetSalary
+    from Payroll
+    where EmpID = 1 and [Month] = 12 and [Year] = 2025)
+    ) as Tax
+go
+
+-- 3. tinh so lan di muon trong thang
+create or alter function fn_LateArrivalsCount (@EmpId int, @Month int, @Year  int)
+returns int
+as
+begin
+    declare @LateCount int;
+
+    select @LateCount = count(*)
+    from Attendance
+    where EmpId = @EmpId
+        and MONTH(WorkDate) = @Month
+        and YEAR(WorkDate) = @Year
+        and [Status] = 'Late'
+
+    return @LateCount;
+end
+go
+
+select dbo.fn_LateArrivalsCount(1, 12, 2025) as LateArrivalsCount
+go
+-- TABLE RETURN FUNCTION
+-- 1. lay danh sach nv theo dept
+create or alter function fn_GetEmployeesByDept (@DeptId varchar(5))
+returns table
+as 
+return
+(
+select
+    e.DeptId,
+    e.EmpID,
+    CONCAT(FName, ' ', LName) as Fullname,
+    e.[Position],
+    l.LocationName,
+    e.Email,
+    e.Phone,
+    e.BaseSalary
+from Employees e
+    join [Location] l on e.LocationId = e.LocationId
+where e.DeptId = @DeptId
+)
+go
+
+select *
+from dbo.fn_GetEmployeesByDept('IT')
+go
+
+-- 2. xem lich su luong cua nv
+create or alter function fn_GetPayrollHistory (@EmpId int)
+returns table
+as
+return
+(
+select
+    e.EmpID,
+    CONCAT(FName, ' ', LName) as Fullname,
+    e.DeptId,
+    e.[Position],
+    p.[Month],
+    p.[Year],
+    e.BaseSalary,
+    p.NetSalary
+from Employees e
+    join Payroll p on e.EmpId = p.EmpID
+where e.EmpId = @EmpId
+)
+go
+
+select *
+from dbo.fn_GetPayrollHistory(1) as Payroll
+go
+
+-- 3. tim nhan vien theo khoang luong
+create or alter function fn_FindEmpBySalaryRange (@Min decimal(18,2), @Max decimal(18,2))
+returns table
+as
+return
+(
+select
+    e.EmpID,
+    CONCAT(FName, ' ', LName) as Fullname,
+    e.[Position],
+    e.DeptId,
+    e.BaseSalary
+from Employees e
+where e.BaseSalary between @Min and @Max
+)
+go
+
+select *
+from dbo.fn_FindEmpBySalaryRange(2000, 3000) 
+go
+
+------------------------------------------------------------------------
+-- PROCEDURE
+-- Input Parameter Proc
+-- 1. update luong 
+create or alter proc p_UpdateSalary
+    @EmpId int,
+    @NewSalary decimal(18,2)
+as
+begin
+    if not exists(select 1
+    from Employees
+    where EmpId = @EmpId)
+    begin
+        print 'Employee not found!'
+    end
+    
+    else
+    begin
+        update Employees
+    set BaseSalary = @NewSalary
+    where EmpId = @EmpId
+        print 'Update employee with Id ' + CAST(@EmpId as NVARCHAR(10)) + ' successfully !'
+    end
+end
+go
+
+exec p_UpdateSalary 1, 2800
+go
+
+exec p_UpdateSalary 21, 2800
+go
+
+select *
+from Employees
+where EmpId = 1
+go
+
+-- 2. add Location
+create or alter proc p_AddLocation
+    @LocationId varchar(5),
+    @LocationName nvarchar(50),
+    @StreetAddress nvarchar(100),
+    @City nvarchar(20),
+    @Country nvarchar(20),
+    @PostalCode nvarchar(20),
+    @LocPhone varchar(20),
+    @LocEmail varchar(50)
+as
+begin
+    if exists (select 1
+    from [Location]
+    where LocationName = @LocationName)
+    begin
+        print 'Location already existed !'
+    end
+
+    else
+    begin
+        insert into [Location]
+            (LocationId, LocationName, StreetAddress, City, Country, PostalCode, LocPhone, LocEmail)
+        values
+            (@LocationId, @LocationName, @StreetAddress, @City, @Country, @PostalCode, @LocPhone, @LocEmail)
+
+        print 'Location added successfully : ' + @LocationName
+    end
+end
+go
+
+-- insert new location
+exec p_AddLocation 
+'JP2', 'FPT Japan Training Center', 'Shibadaimon Building No. 2 7F, Shibadaimon 1-12-16, Minato-ku',
+ 'Tokyo', 'Japan', '123123', '+81 3-6634-6868', ''
+go
+
+-- insert existed location
+exec p_AddLocation 
+'JP2', 'FPT Japan Training Center', 'Shibadaimon Building No. 2 7F, Shibadaimon 1-12-16, Minato-ku',
+ 'Tokyo', 'Japan', '123123', '+81 3-6634-6868', ''
+go
+
+
+-- 3. chuyen phong ban
+create or alter proc p_TransferDepartment
+    @EmpId int,
+    @NewDeptId varchar(5)
+as
+begin
+    if not exists (select 1
+    from Department
+    where DeptId = @NewDeptId)
+    begin
+        print 'Department not existed !'
+        return
+    end
+
+    else
+    begin
+        update Employees
+    set DeptId = @NewDeptId
+    where EmpId = @EmpId
+    end
+
+    print 'Moved employee ' + CAST(@EmpId as NVARCHAR(10)) + ' to ' + @NewDeptId + ' successfully !'
+end
+go
+
+select
+    e.EmpId,
+    e.DeptId
+from Employees e
+
+exec p_TransferDepartment 1, 'MKT'
+
+exec p_TransferDepartment 2, 'IT'
+go
+
+-- 4. xoa 1 nhan vien va tat ca thong tin lien quan
+create or alter procedure p_DeleteEmployee
+    @EmpId int
+as
+begin
+    begin transaction
+    begin try
+        delete from EmpInfo where EmpId = @EmpId
+        delete from Attendance where EmpId = @EmpId
+        delete from Payroll where EmpID = @EmpId
+        delete from Employees where EmpId = @EmpId
+        commit transaction
+        print 'Employee deleted completely !'
+    end try
+    begin catch
+        rollback transaction
+        print 'Error ! Can not delete this employee'
+    end CATCH
+end
+go
+
+exec p_DeleteEmployee 1003
+go
+
+-- Output Parameter Proc
+-- 1. lay ho va ten day du cua nv
+create or alter proc p_GetFullNameById
+    @EmpId int,
+    @FullName nvarchar(50) OUTPUT
+as
+begin
+    select @FullName = LName + ' ' + FName
+    from Employees
+    where EmpId = @EmpId
+
+    if @FullName is null
+        set @FullName = 'Not found !'
+end
+go
+
+declare @Fullname nvarchar(50)
+exec p_GetFullNameById 1, @Fullname output
+-- cach 1
+select @Fullname as Fullname
+-- cach 2
+print @FullName
+go
+
+-- 2. dem nv theo postion
+create or alter proc p_CountStaffsByPosition
+    @Pos nvarchar(20),
+    @Count int output
+as
+begin
+    select @Count = COUNT(EmpId)
+    from Employees
+    where [Position] = @Pos
+end
+go
+
+declare @Count int
+exec p_CountStaffsByPosition BrSE, @Count output
+-- cach 1
+select @Count as NoOfStaffs
+-- cach 2
+print @Count
+go
+
+-- 3. lay luong cao nhat va thap nhat cua phong ban
+create or alter proc p_GetDeptSalaryRange
+    @DeptId varchar(5),
+    @MinSalary decimal(18,2) output,
+    @MaxSalary decimal(18,2) output
+as
+begin
+    select
+        @MinSalary = MIN(BaseSalary),
+        @MaxSalary = MAX(BaseSalary)
+    from Employees
+    where DeptId = @DeptId
+
+    set @MinSalary = ISNULL(@MinSalary, 0)
+    set @MaxSalary = ISNULL(@MaxSalary, 0)
+end
+go
+
+declare @Min decimal(18,2)
+declare @Max decimal(18,2)
+exec p_GetDeptSalaryRange 'IT', @Min output, @Max output
+-- cach 1 
+select
+    @Min as [Min],
+    @Max as [Max]
+-- cach 2 
+print 'Min Salary ' + CAST(@Min as nvarchar(10))
+print 'Max Salary ' + CAST(@Max as nvarchar(10))
+go
+
+------------------------------------------------------------------------
+-- TRIGGER
+-- 1. trigger ngan chan khi insert Attendance k hop le
+create or alter trigger tg_CheckTimeValid
+on Attendance
+AFTER insert, update
+as
+begin
+    if exists (
+    select 1
+    from inserted
+    where CheckoutTime is not null
+        and CheckoutTime <= CheckinTime
+    )
+    begin
+        print 'Error ! Check out time must bigger than check in time !'
+        rollback transaction
+    end
+end
+go
+
+-- test
+insert into Attendance
+    (EmpId, WorkDate, CheckinTime, CheckoutTime, [Status], OvertimeHours)
+values
+    (1, '2025-12-10', '07:55:00', '07:00:00', 'Present', 0)
+go
+
+enable trigger tg_CheckTimeValid on Attendance
+go
+disable trigger tg_CheckTimeValid on Attendance
+go
+
+-- 2. trigger khong cho phep giam luong
+create or alter trigger tg_PreventSalaryDecrease
+on Employees
+AFTER update
+as
+begin
+    if exists (
+        select 1
+    from inserted i
+        join deleted d on i.EmpId = d.EmpId
+    where i.BaseSalary < d.BaseSalary
+    )
+    begin
+        print 'Can not decrease employee Salary !'
+        rollback transaction
+    end
+end
+go
+
+-- test 
+update Employees 
+set BaseSalary = 1 
+where EmpId = 1
+go
+
+-- 3. trigger khi them nhan vien. nv phai > 18 tuoi moi du tuoi lao dong
+create or alter trigger tg_CheckWorkingAge
+on EmpInfo
+AFTER insert, update
+as
+begin
+    if exists (
+        select 1
+    from inserted
+    where DATEDIFF(YEAR, Birthdate, GETDATE()) < 18
+    )
+    begin
+        print 'Employee is not 18 years old yet !'
+        rollback transaction
+    end
+end
+go
+
+-- test 
+set
+identity_insert "EmpInfo" on
+
+insert into EmpInfo
+    (EmpId, Gender, Birthdate, HomeAddress, Hometown, Nationality, HireDate)
+values
+    (1002, 'M', '2010-01-01', 'Shinjuku', N'Thái Bình', 'Vietnamese', '2026-01-01')
+
+insert into EmpInfo
+    (EmpId, Gender, Birthdate, HomeAddress, Hometown, Nationality, HireDate)
+values
+    (1003, 'M', '2005-01-01', 'Shinjuku', N'Thái Bình', 'Vietnamese', '2026-01-01')
+
+select *
+from Employees e
+    full join EmpInfo ei on e.EmpId = ei.EmpId
+
+insert into Employees
+    (FName, LName, Position, Email, Phone, BaseSalary, DeptId, LocationId)
+values
+    (N'Đỗ Thị', N'Trang', N'Tester', 'trangdt@fpt.com', '0944555666', 1100, 'IT', 'VN1')
+go
+
+------------------------------------------------------------------------
+-- VIEW
+-- 1. view tong hop thong tin nv, phong ban, dia diem
+create or alter view v_EmployeeData
+as
+    select
+        e.EmpId,
+        e.FName + ' ' + e.LName as FullName,
+        e.Position,
+        e.Email,
+        d.DeptName,
+        l.LocationName,
+        l.City
+    from Employees e
+        join Department d on e.DeptId = d.DeptId
+        join [Location] l on e.LocationId = l.LocationId
+go
+
+select *
+from v_EmployeeData
+go
+
+-- xoa tu view
+
+delete v_EmployeeData
+where EmpId = 1002
+
+go
+create trigger tg_DeleteEmployeeViaView
+on v_EmployeeData
+INSTEAD of delete 
+as
+begin
+
+    declare @EmpIdToDelete int
+    select @EmpIdToDelete = EmpId
+    from deleted
+    delete from Employees where EmpId = @EmpIdToDelete
+
+    print 'Deleted Employee successfully !'
+end
+go
+
+-- 2. bao cao luong
+create or alter view v_PayrollConfidential
+as
+    select
+        p.[Month],
+        p.[Year],
+        e.EmpId,
+        e.FName + ' ' + e.LName as FullName,
+        d.DeptName,
+        p.TotalWorkDays,
+        p.TotalOTHours,
+        p.NetSalary
+    from Payroll p
+        join Employees e on p.EmpID = e.EmpId
+        join Department d on e.DeptId = d.DeptId
+go
+
+select *
+from v_PayrollConfidential
+where [Month] = 12
+go
+
+-- 3. xem danh ba cong ty, de nv tra cuu sdt, email de lien he 
+create or alter view v_CompanyDirectory
+as
+    select
+        EmpId,
+        FName,
+        LName,
+        Position,
+        DeptId,
+        Email,
+        Phone
+    from Employees
+go
+
+select *
+from v_CompanyDirectory
+order by FName
+go
+
+-- 4. thong ke di lam muon
+create or alter view v_LateHistory
+as
+    select
+        a.WorkDate,
+        e.FName + ' ' + e.LName as EmployeeName,
+        d.DeptName,
+        a.CheckinTime,
+        a.[Status]
+    from Attendance a
+        join Employees e on a.EmpId = e.EmpId
+        join Department d on e.DeptId = d.DeptId
+    where a.[Status] = 'Late'
+go
+
+select *
+from v_LateHistory
+where WorkDate > '2025-12-01'
+go
+
+-- 5. thong ke nhan su, luong theo phong ban
+create or alter view v_DeptStats
+as
+    select
+        d.DeptId,
+        d.DeptName,
+        COUNT(e.EmpId) as TotalEmployees,
+        ISNULL(SUM(e.BaseSalary), 0) as TotalBaseSalaryBudget,
+        ISNULL(AVG(e.BaseSalary), 0) as AvgBaseSalary
+    from Department d
+        left join Employees e on d.DeptId = e.DeptId
+    group by d.DeptId, d.DeptName
+go
+
+select *
+from v_DeptStats
+order by TotalEmployees desc
+go
+
