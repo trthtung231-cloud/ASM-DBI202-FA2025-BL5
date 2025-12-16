@@ -2721,3 +2721,19 @@ from v_DeptStats
 order by TotalEmployees desc
 go
 
+------------------------------------------------------------------------
+-- INDEX
+create nonclustered index index_Employees_SearchName 
+on Employees(FName, LName)
+
+create nonclustered index index_Employees_Position 
+on Employees(Position)
+
+create nonclustered index index_Location_LocationName 
+on [Location](LocationName)
+
+create nonclustered index index_Department_DeptName 
+on Department(DeptName)
+
+create nonclustered index index_Attendance_WorkDate 
+on Attendance(WorkDate)
