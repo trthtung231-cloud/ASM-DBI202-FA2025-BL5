@@ -1993,18 +1993,70 @@ group by e.EmpId, e.BaseSalary;
 -- 1. danh sach tat ca nhan vien
 select *
 from Employees
+
 -- 2. danh sach tat ca cac phong ban
 select *
 from Department
+
 -- 3. danh sach tat ca ban ghi cham cong
 select *
 from Attendance
+
 -- 4. danh sach tat ca cac chi nhanh
 select *
 from [Location]
+
 -- 5. danh sach tat ca ban ghi luong 
 select *
 from Payroll
+
+-- 6. nhung vi tri hien co trong cong ty
+select distinct Position
+from Employees
+order by Position
+
+-- 7. dev, manager
+select
+    EmpId,
+    FName,
+    LName,
+    Position,
+    DeptId
+from Employees
+where Position in ('Dev', 'Senior Dev', 'Project Manager')
+order by DeptId
+
+-- 8. du tinh thu nhap ca nam cua nv
+select
+    EmpId,
+    FName + ' ' + LName as FullName,
+    BaseSalary as MonthlySalary,
+    (BaseSalary * 12) as EstimatedAnnualSalary
+from Employees
+order by EstimatedAnnualSalary desc
+
+-- 9. loc nv co sinh nhat trong quy 1 
+select
+    EmpId,
+    Gender,
+    Birthdate,
+    Hometown
+from EmpInfo
+where MONTH(Birthdate) in (1, 2, 3)
+order by MONTH(Birthdate) asc
+
+-- 10. 
+select
+    EmpId,
+    FName,
+    LName,
+    Email,
+    Phone
+from Employees
+where Email like '%@gmail.com'
+    or Email like '%@yahoo.com'
+
+go
 
 ------------------------------------------------------------------------
 -- MULTIPLE SELECT 
@@ -2144,6 +2196,8 @@ where e1.DeptId = e.DeptId
 )
 order by e.BaseSalary desc
 go
+
+
 ------------------------------------------------------------------------
 -- FUNCTION
 -- SCALAR RETURN FUNCTION
