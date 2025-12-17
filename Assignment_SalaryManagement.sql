@@ -192,6 +192,10 @@ insert into EmpInfo
 values
     ('M', '2006-01-23', 'Shinjuku', N'Thái Bình', 'Vietnamese', '2026-01-01')
 
+update Employees
+set Phone = '+84966244761'
+where EmpId = 1
+
 insert into Employees
     (FName, LName, Position, Email, Phone, BaseSalary, DeptId, LocationId)
 values
@@ -2069,10 +2073,6 @@ where e.LocationId = (select LocationId
 from [Location]
 where LocationName = 'Tokyo Headquarter')
 
-update Employees
-set Phone = '+84966244761'
-where EmpId = 1
-
 -- 2. nhan vien moi nhan viec
 select
     e.EmpId,
@@ -2119,6 +2119,80 @@ where p.[Month] = 2 and p.[Year] = 2026
 group by d.DeptId, d.DeptName
 order by ISNULL(SUM(p.NetSalary), 0) desc
 
+-- 6. ho so nhan vien
+select
+    e.EmpId,
+    e.FName + ' ' + e.LName as FullName,
+    e.Position,
+    d.DeptName,
+    l.LocationName,
+    l.City
+from Employees e
+    inner join Department d on e.DeptId = d.DeptId
+    inner join [Location] l on e.LocationId = l.LocationId
+
+-- 7. bang luong chi tiet theo phong ban
+select
+    d.DeptName,
+    e.EmpId,
+    e.FName + ' ' + e.LName as FullName,
+    p.TotalWorkDays,
+    p.TotalOTHours,
+    p.NetSalary
+from Payroll p
+    join Employees e on p.EmpID = e.EmpId
+    join Department d on e.DeptId = d.DeptId
+where p.[Month] = 12
+    and p.[Year] = 2025
+order by d.DeptName, p.NetSalary desc
+
+-- 8. thong tin nhung nhan vien di muon trong thang kem thong tin lien lac
+select
+    a.WorkDate,
+    e.FName + ' ' + e.LName as OffenderName,
+    e.Phone,
+    e.Email,
+    d.DeptName,
+    a.CheckinTime
+from Attendance a
+    join Employees e on a.EmpId = e.EmpId
+    join Department d on e.DeptId = d.DeptId
+where a.[Status] = 'Late'
+    and MONTH(a.WorkDate) = 12
+    and YEAR(a.WorkDate) = 2025
+order by a.WorkDate desc
+
+-- 9. thong ke ngay cong va luong thuc nhan cua nv
+select
+    e.EmpId,
+    e.FName + ' ' + e.LName as FullName,
+    d.DeptName,
+    p.TotalWorkDays,
+    p.NetSalary
+from Employees e
+    join Payroll p on e.EmpId = p.EmpID
+    join Department d on e.DeptId = d.DeptId
+where d.DeptId = 'IT'
+    and p.[Month] = 2
+    and p.[Year] = 2026
+order by p.TotalWorkDays desc
+
+-- 10. ho so ly lich, vv...
+select
+    e.EmpId,
+    e.FName + ' ' + e.LName as FullName,
+    i.Gender,
+    i.Nationality,
+    e.Position,
+    d.DeptName,
+    l.City as WorkCity
+from Employees e
+    inner join EmpInfo i on e.EmpId = i.EmpId
+    inner join Department d on e.DeptId = d.DeptId
+    inner join [Location] l on e.LocationId = l.LocationId
+order by l.City, e.Position
+
+go
 ------------------------------------------------------------------------
 -- SUB-QUERY
 -- 1. nhan vien co luong thuc nhan cao hon muc trung binh
@@ -2148,7 +2222,7 @@ select
     *
 from Employees e
 where e.EmpId not in (
-    select distinct
+select distinct
     EmpId
 from Attendance
 where [Status] = 'Late'
@@ -2195,9 +2269,69 @@ from Employees e1
 where e1.DeptId = e.DeptId
 )
 order by e.BaseSalary desc
+
+-- 6. nhan vien tre nhat
+select
+    e.EmpId,
+    e.FName + ' ' + e.LName as FullName,
+    i.Birthdate
+from Employees e
+    join EmpInfo i on e.EmpId = i.EmpId
+where i.Birthdate = (
+    select MAX(Birthdate)
+from EmpInfo
+)
+
+-- 7. 3 nv luong cao nhat
+select
+    T.EmpId,
+    T.FullName,
+    T.BaseSalary
+from (
+    select top 3
+        EmpId,
+        FName + ' ' + LName as FullName,
+        BaseSalary
+    from Employees
+    order by BaseSalary desc
+) as T
+
+-- 8. phong ban co luong trung binh cao hon phong khac
+select
+    d.DeptName,
+    AVG(e.BaseSalary) as AvgDeptSalary
+from Department d
+    join Employees e on d.DeptId = e.DeptId
+group by d.DeptName
+having AVG(e.BaseSalary) > (
+    select AVG(BaseSalary)
+from Employees
+)
+
+-- 9. nhan vien IT co luong > tat ca nv CS
+select EmpId, FName, LName, BaseSalary
+from Employees
+where DeptId = 'IT'
+    and BaseSalary > all (
+      select BaseSalary
+    from Employees
+    where DeptId = 'CS'
+  )
+
+-- 10. tim nv co luong cao thu 2
+select top 1 with ties
+    EmpId,
+    FName + ' ' + LName as FullName,
+    Position,
+    BaseSalary
+from Employees
+where BaseSalary < (
+    select MAX(BaseSalary)
+from Employees
+)
+order by BaseSalary desc
+
 go
-
-
 ------------------------------------------------------------------------
 -- FUNCTION
 -- SCALAR RETURN FUNCTION
@@ -2266,6 +2400,56 @@ go
 
 select dbo.fn_LateArrivalsCount(1, 12, 2025) as LateArrivalsCount
 go
+
+-- 4. tinh tuoi nv
+create or alter function fn_CalculateAge (@EmpId int)
+returns int
+as
+begin
+    declare @Birthdate date
+    declare @Age int
+
+    select @Birthdate = Birthdate
+    from EmpInfo
+    where EmpId = @EmpId
+
+    if @Birthdate is null return null
+
+    set @Age = DATEDIFF(YEAR, @Birthdate, GETDATE()) - 
+               case 
+                   when DATEADD(YEAR, DATEDIFF(YEAR, @Birthdate, GETDATE()), @Birthdate) > GETDATE() 
+                   then 1 
+                   else 0 
+               end
+
+    return @Age
+end
+go
+
+select dbo.fn_CalculateAge(1)
+
+select EmpId, FName, dbo.fn_CalculateAge(EmpId) as Tuoi
+from Employees
+where dbo.fn_CalculateAge(EmpId) < 30
+go
+
+-- 5. tinh luong 1 ngay cong
+create or alter function fn_GetDailyRate (@BaseSalary decimal(18, 2))
+RETURNS decimal(18, 2)
+as
+begin
+    return ISNULL(@BaseSalary, 0) / 22.0
+end
+go
+
+select
+    EmpId,
+    FName,
+    BaseSalary,
+    dbo.fn_GetDailyRate(BaseSalary) as SalaryPerDay
+from Employees
+go
+
 -- TABLE RETURN FUNCTION
 -- 1. lay danh sach nv theo dept
 create or alter function fn_GetEmployeesByDept (@DeptId varchar(5))
@@ -2336,6 +2520,66 @@ go
 
 select *
 from dbo.fn_FindEmpBySalaryRange(2000, 3000) 
+go
+
+-- 4. lich su cham cong
+create or alter function fn_GetAttendanceHistory 
+(
+    @EmpId int, 
+    @FromDate date, 
+    @ToDate date
+)
+returns table
+as
+return 
+(
+    select
+    a.WorkDate,
+    a.CheckinTime,
+    a.CheckoutTime,
+    a.[Status],
+    DATEDIFF(MINUTE, a.CheckinTime, a.CheckoutTime) / 60.0 as HoursWorked
+from Attendance a
+where a.EmpId = @EmpId
+    and a.WorkDate between @FromDate and @ToDate
+)
+go
+
+select *
+from dbo.fn_GetAttendanceHistory(1, '2025-12-01', '2025-12-31')
+order by WorkDate desc
+go
+
+-- 5. ham tinh luong thang cua tat ca nv
+create or alter function fn_GetPayrollReport 
+(
+    @Month int, 
+    @Year int
+)
+returns table
+as
+return 
+(
+    select
+    e.EmpId,
+    e.FName + ' ' + e.LName as FullName,
+    d.DeptName,
+    e.BaseSalary,
+    p.TotalOTHours,
+    p.TotalWorkDays,
+    p.NetSalary
+from Payroll p
+    join Employees e on p.EmpID = e.EmpId
+    join Department d on e.DeptId = d.DeptId
+where p.[Month] = @Month
+    and p.[Year] = @Year
+)
+go
+
+select *
+from dbo.fn_GetPayrollReport(12, 2025)
+order by NetSalary desc
+
 go
 
 ------------------------------------------------------------------------
@@ -2478,6 +2722,63 @@ go
 exec p_DeleteEmployee 1003
 go
 
+-- 5. chuyen dia diem lam viec cho nv
+create or alter procedure p_TransferWorkLocation
+    @EmpId int,
+    @NewLocationId varchar(10)
+as
+begin
+    declare @OldLocationId varchar(10)
+    declare @LocationName nvarchar(100)
+
+    select @OldLocationId = LocationId
+    from Employees
+    where EmpId = @EmpId
+
+    if @OldLocationId is null
+    begin
+        print 'Employee with Id ' + CAST(@EmpId as VARCHAR) + ' not found !'
+        return
+    end
+
+    select @LocationName = LocationName
+    from [Location]
+    where LocationId = @NewLocationId
+
+    if @LocationName is null
+    begin
+        print 'LocationId not valid !'
+        return
+    end
+
+    if @OldLocationId = @NewLocationId
+    begin
+        print 'Employee already worked at ' + @LocationName + ' !'
+        return
+    end
+
+    begin try
+        update Employees
+        set LocationId = @NewLocationId
+        where EmpId = @EmpId
+
+        print 'Employee moved to ' + @LocationName + ' successfully !'
+    end TRY
+    begin catch
+        print 'Error !'
+        print ERROR_MESSAGE()
+    end catch
+end
+go
+
+select *
+from Employees
+
+exec p_TransferWorkLocation 1, 'VN1'
+exec p_TransferWorkLocation 1, 'JP1'
+
+go
+
 -- Output Parameter Proc
 -- 1. lay ho va ten day du cua nv
 create or alter proc p_GetFullNameById
@@ -2550,6 +2851,74 @@ select
 -- cach 2 
 print 'Min Salary ' + CAST(@Min as nvarchar(10))
 print 'Max Salary ' + CAST(@Max as nvarchar(10))
+go
+
+-- 4. tong so nhan vien va tong ngan sach luong
+create or alter procedure p_GetDeptStats
+    @DeptId varchar(10),
+    @EmployeeCount int OUTPUT,
+    @TotalBudget decimal(18, 2) OUTPUT
+as
+begin
+    select
+        @EmployeeCount = COUNT(EmpId),
+        @TotalBudget = ISNULL(SUM(BaseSalary), 0)
+    from Employees
+    where DeptId = @DeptId
+end
+
+declare @NoOfEmp int
+declare @TotalSalaryBudget decimal(18, 2)
+
+exec p_GetDeptStats 
+    'IT', 
+    @NoOfEmp output, 
+    @TotalBudget output
+select @NoOfEmp as NumberOfEmployees, @TotalSalaryBudget as TotalBaseSalaryBudget
+go
+
+-- 5. nv va tham nien lam viec
+create or alter procedure p_GetEmpLatestInfo
+    @EmpId int,
+    @FullName nvarchar(100) OUTPUT,
+    @YearsOfService int OUTPUT
+as
+begin
+    declare @HireDate date
+
+    select
+        @FullName = e.FName + ' ' + e.LName,
+        @HireDate = i.HireDate
+    from Employees e
+        join EmpInfo i on e.EmpId = i.EmpId
+    where e.EmpId = @EmpId
+
+    if @FullName is null
+    begin
+        set @YearsOfService = 0
+        return
+    end
+
+    set @YearsOfService = DATEDIFF(YEAR, @HireDate, GETDATE())
+end
+go
+
+declare @FullName nvarchar(100)
+declare @YearsOfService int
+
+exec p_GetEmpLatestInfo 
+    1, 
+    @FullName output, 
+    @YearsOfService output
+
+select
+    @FullName as [Employee],
+    @YearsOfService as YearsOfService
+
+
+print 'Employee: ' + @FullName
+print 'Worked ' + CAST(@YearsOfService as VARCHAR) + ' year'
+
 go
 
 ------------------------------------------------------------------------
